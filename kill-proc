@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""
+Terminate processes cleanly to free RAM.
+Sends SIGTERM first, waits, then falls back to SIGKILL if necessary.
+Used by the Mem Reduct Omarchy plugin.
+"""
+import os
+import sys
+import signal
+import time
+import json
+
+def fmt_bytes(kb):
+    mb = kb / 1024.0
+    if mb >= 1024:
+        return f"{mb / 1024.0:.1f} GB"
+    elif mb >= 1:
+        return f"{mb:.0f} MB"
+    else:
+        return f"{kb} KB"
+
+def kill_pids(pids):
+    freed_kb = 0
+    killed = []
+
+    # Calculate memory to free
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/statm", "r") as f:
+                freed_kb += int(f.read().split()[1]) * 4
+        except Exception:
+            pass
+
+    # Send SIGTERM for clean shutdown
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    time.sleep(0.15)
+
+    # Force kill any stubborn processes still running
+    for pid in pids:
+        try:
+            os.kill(pid, 0)
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+    return {
+        "success": True,
+        "killed": killed,
+        "freed_kb": freed_kb,
+        "freed_label": fmt_bytes(freed_kb)
+    }
+
+if __name__ == "__main__":
+    raw_pids = sys.argv[1:]
+    pids = []
+    for arg in raw_pids:
+        try:
+            pids.append(int(arg))
+        except ValueError:
+            continue
+
+    if not pids:
+        sys.stdout.write(json.dumps({"success": False, "error": "No PIDs provided"}))
+        sys.exit(0)
+
+    result = kill_pids(pids)
+    sys.stdout.write(json.dumps(result))
+    sys.stdout.flush()

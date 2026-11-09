@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""
+Scan processes and window clients to report memory usage in JSON format.
+Used by the Mem Reduct Omarchy plugin.
+"""
+import os
+import sys
+import glob
+import json
+import subprocess
+
+def get_processes():
+    total_ram_kb = 1
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total_ram_kb = int(line.split()[1])
+                    break
+    except Exception:
+        pass
+
+    # Read Hyprland windows to match GUI applications
+    clients = []
+    try:
+        res = subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True, timeout=1)
+        if res.returncode == 0:
+            clients = json.loads(res.stdout)
+    except Exception:
+        pass
+
+    window_by_pid = {}
+    for c in clients:
+        pid = c.get("pid")
+        if pid:
+            window_by_pid[pid] = c
+
+    procs = {}
+    children = {}
+
+    for pdir in glob.glob("/proc/[0-9]*"):
+        try:
+            pid = int(os.path.basename(pdir))
+            with open(f"{pdir}/stat", "r") as f:
+                content = f.read()
+            rparen = content.rfind(")")
+            comm = content[content.find("(") + 1 : rparen]
+            rest = content[rparen + 2 :].split()
+            ppid = int(rest[1])
+
+            with open(f"{pdir}/statm", "r") as f:
+                statm = f.read().split()
+                rss_kb = int(statm[1]) * 4
+
+            cmdline = ""
+            try:
+                with open(f"{pdir}/cmdline", "rb") as f:
+                    cmdline = f.read().decode("utf-8", "ignore").replace("\x00", " ").strip()
+            except Exception:
+                pass
+
+            procs[pid] = {
+                "pid": pid,
+                "ppid": ppid,
+                "comm": comm,
+                "rss_kb": rss_kb,
+                "cmdline": cmdline,
+            }
+            children.setdefault(ppid, []).append(pid)
+        except (FileNotFoundError, PermissionError, ProcessLookupError, IndexError, ValueError):
+            continue
+
+    def get_tree_pids(root_pid):
+        tree = [root_pid]
+        idx = 0
+        while idx < len(tree):
+            p = tree[idx]
+            for c in children.get(p, []):
+                if c not in tree:
+                    tree.append(c)
+            idx += 1
+        return tree
+
+    PROTECTED_NAMES = {
+        "systemd", "hyprland", "quickshell", "pipewire", "wireplumber",
+        "pipewire-pulse", "dbus-daemon", "dbus-broker", "polkitd", "sddm",
+        "xdg-desktop-portal-hyprland"
+    }
+
+    def fmt_bytes(kb):
+        mb = kb / 1024.0
+        if mb >= 1024:
+            return f"{mb / 1024.0:.1f} GB"
+        elif mb >= 10:
+            return f"{mb:.0f} MB"
+        else:
+            return f"{mb:.1f} MB"
+
+    def clean_app_name(raw_name):
+        lower = raw_name.lower()
+        if "brave" in lower: return "Brave Browser"
+        if "chrome" in lower: return "Google Chrome"
+        if "firefox" in lower: return "Firefox"
+        if "spotube" in lower: return "Spotube"
+        if "spotify" in lower: return "Spotify"
+        if "discord" in lower: return "Discord"
+        if "code" in lower or "vscode" in lower: return "VS Code"
+        if "antigravity" in lower: return "Antigravity IDE"
+        if "foot" in lower or "terminal" in lower or "agent" in lower: return "Terminal"
+        if "kitty" in lower: return "Kitty"
+        if "alacritty" in lower: return "Alacritty"
+        if "ghostty" in lower: return "Ghostty"
+        if "steam" in lower: return "Steam"
+        if "btop" in lower: return "btop"
+        if "python" in lower: return "Python"
+        if "node" in lower: return "Node.js"
+        if "ollama" in lower: return "Ollama"
+        if "slack" in lower: return "Slack"
+        if "telegram" in lower: return "Telegram"
+        if "obs" in lower: return "OBS Studio"
+        if "vlc" in lower: return "VLC"
+        if "mpv" in lower: return "mpv"
+        return raw_name[:1].upper() + raw_name[1:]
+
+    assigned = set()
+    apps = []
+
+    # 1. Window applications (groups child renderers/workers under window client)
+    for wpid, c in window_by_pid.items():
+        if wpid not in procs:
+            continue
+        tree = get_tree_pids(wpid)
+        total_rss = sum(procs[p]["rss_kb"] for p in tree if p in procs)
+        assigned.update(tree)
+        raw_name = c.get("class") or procs[wpid]["comm"]
+        title = c.get("title") or ""
+        is_prot = (wpid == 1 or raw_name.lower() in PROTECTED_NAMES)
+        apps.append({
+            "pid": wpid,
+            "pids": tree,
+            "name": clean_app_name(raw_name),
+            "title": title if title != raw_name else "",
+            "class": raw_name,
+            "is_window": True,
+            "is_app": True,
+            "rss_kb": total_rss,
+            "rss_label": fmt_bytes(total_rss),
+            "percent": round((total_rss / total_ram_kb) * 100, 1),
+            "count": len(tree),
+            "protected": is_prot,
+        })
+
+    # 2. Non-window background processes (memory >= 5MB)
+    bg = []
+    by_comm = {}
+    for pid, p in procs.items():
+        if pid in assigned or p["rss_kb"] < 5120:
+            continue
+        comm = p["comm"]
+        by_comm.setdefault(comm, []).append(pid)
+
+    for comm, pids in by_comm.items():
+        total_rss = sum(procs[p]["rss_kb"] for p in pids)
+        main_pid = pids[0]
+        is_prot = (main_pid == 1 or comm.lower() in PROTECTED_NAMES)
+        cmdline = procs[main_pid].get("cmdline", "")
+        # Strip long path for title
+        short_cmd = cmdline
+        if len(short_cmd) > 65:
+            short_cmd = short_cmd[:62] + "..."
+
+        bg.append({
+            "pid": main_pid,
+            "pids": pids,
+            "name": clean_app_name(comm),
+            "title": short_cmd,
+            "class": comm,
+            "is_window": False,
+            "is_app": False,
+            "rss_kb": total_rss,
+            "rss_label": fmt_bytes(total_rss),
+            "percent": round((total_rss / total_ram_kb) * 100, 1),
+            "count": len(pids),
+            "protected": is_prot,
+        })
+
+    apps.sort(key=lambda x: x["rss_kb"], reverse=True)
+    bg.sort(key=lambda x: x["rss_kb"], reverse=True)
+    all_procs = sorted(apps + bg, key=lambda x: x["rss_kb"], reverse=True)
+
+    return {
+        "total_ram_kb": total_ram_kb,
+        "apps": apps,
+        "background": bg,
+        "all": all_procs,
+    }
+
+if __name__ == "__main__":
+    data = get_processes()
+    sys.stdout.write(json.dumps(data))
+    sys.stdout.flush()

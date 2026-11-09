@@ -1,0 +1,26 @@
+#!/bin/bash
+# Mem Reduct memory cleaner
+# Executes the system helper authorized passwordless via sudo/polkit
+set -e
+
+if [[ -x /usr/local/bin/mem-reduct-clean ]]; then
+  if [[ $EUID -eq 0 ]]; then
+    exec /usr/local/bin/mem-reduct-clean "$@"
+  else
+    exec sudo -n /usr/local/bin/mem-reduct-clean "$@"
+  fi
+fi
+
+if [[ $EUID -ne 0 ]]; then
+  echo "clean-ram must run as root" >&2
+  exit 1
+fi
+
+sync
+echo 3 > /proc/sys/vm/drop_caches
+[[ -w /proc/sys/vm/compact_memory ]] && echo 1 > /proc/sys/vm/compact_memory || true
+for z in /sys/block/zram*/compact; do
+  [[ -w "$z" ]] && echo 1 > "$z" || true
+done
+
+exit 0

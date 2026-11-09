@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "sushantkr.mem-reduct",
+  "name": "Mem Reduct",
+  "version": "1.0.0",
+  "author": "sushantkr",
+  "license": "MIT",
+  "description": "Mem Reduct bar widget with real-time memory stats, one-click cache drop and memory compaction, and direct program closer to clean RAM",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Mem Reduct",
+    "description": "Clean RAM and terminate memory-heavy programs directly",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

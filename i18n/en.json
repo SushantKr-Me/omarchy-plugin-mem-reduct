@@ -1,0 +1,16 @@
+{
+  "panel.title": "Mem Reduct",
+  "panel.physical": "Physical Memory",
+  "panel.cache": "Cache & Working Set",
+  "panel.swap": "Page File (Swap)",
+  "panel.clean_ram": "Clean RAM",
+  "panel.cleaning": "Cleaning RAM…",
+  "panel.running_programs": "ACTIVE PROGRAMS & PROCESSES",
+  "panel.filter_placeholder": "Search programs (e.g. brave, spotify)…",
+  "panel.tab_all": "All",
+  "panel.tab_apps": "Apps",
+  "panel.tab_bg": "Background",
+  "panel.close": "Close",
+  "panel.system_protected": "System",
+  "panel.no_matches": "No matching programs found"
+}
