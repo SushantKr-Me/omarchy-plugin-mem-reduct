@@ -53,46 +53,8 @@ A powerful, native RAM management and reduction bar widget for [Omarchy](https:/
 
 ## Installation & Setup
 
-### 1. Dependencies
-
-Ensure Python 3, polkit (`pkexec` for memory cache trimming), and `btop` are available:
-
-```bash
-sudo pacman -S python btop polkit
 ```
-
-### 2. Install Plugin
-
-Clone or copy `sushantkr.mem-reduct` into your Omarchy plugins directory:
-
-```bash
-mkdir -p ~/.config/omarchy/plugins
-cp -r sushantkr.mem-reduct ~/.config/omarchy/plugins/
-chmod +x ~/.config/omarchy/plugins/sushantkr.mem-reduct/clean-ram
-chmod +x ~/.config/omarchy/plugins/sushantkr.mem-reduct/kill-proc
-chmod +x ~/.config/omarchy/plugins/sushantkr.mem-reduct/list-procs
-```
-
-### 3. Add to Status Bar
-
-Add the widget to `~/.config/omarchy/shell.json` inside your desired bar section (e.g. `right`):
-
-```json
-{
-  "id": "sushantkr.mem-reduct"
-}
-```
-
-Or enable it using the Omarchy CLI:
-
-```bash
-omarchy plugin enable sushantkr.mem-reduct right
-```
-
-### 4. Reload Shell
-
-```bash
-omarchy restart shell
+omarchy plugin add https://github.com/SushantKr-Me/omarchy-plugin-mem-reduct.git --enable
 ```
 
 ---
